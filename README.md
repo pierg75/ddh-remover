@@ -24,7 +24,7 @@ ddh-remover 0.1
 Pierguido L.
 It removes files found by the ddh utility.
 ddh has to be used with the json output to be parsed by ddh-remover.
-This can be saved in a file or read from stdin with a pipe a pipe
+This can be saved in a file or read from stdin with a pipe
 
 USAGE:
     ddh-remover [FLAGS] [OPTIONS]
@@ -51,4 +51,4 @@ OPTIONS:
             Read the json input from a file
 ```
 
-### NOTE: this may have los of bugs, I'm not responsible for lost important files.
+### NOTE: this may have lots of bugs, I'm not responsible for the loss of important files.
