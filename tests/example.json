@@ -1,0 +1,21 @@
+ [
+    {
+      "file_length" : 3448841,
+      "file_paths" : [
+         "/data/Photos/IMG_1526.JPG",
+         "/data/Photos/img_1526.jpg"
+      ],
+      "full_hash" : 260937022025977025126680575751216346208,
+      "partial_hash" : 317950961358976506694253445964736246885
+   },
+   {
+      "file_length" : 1318934,
+      "file_paths" : [
+         "/data/Photos/ny/00097.jpg",
+         "/data/Photos/concerts/00097.jpg"
+      ],
+      "full_hash" : 306482972711412640985380379178329462852,
+      "partial_hash" : 119482817874600850350240560092010233366
+   }
+]
+
