@@ -115,6 +115,16 @@ fn main() -> Result<(), Error> {
         trace!("stdin {}", buffer);
     }
 
+    if matches.is_present("dest_path") {
+        match Path::new(matches.value_of("dest_path").unwrap_or("")).exists() {
+            true => {}
+            false => {
+                println!("The destination path does not exists");
+                process::exit(3);
+            }
+        }
+    }
+
     let mut de: Vec<Duplicates> = match serde_json::from_str(&buffer) {
         Ok(de) => de,
         Err(e) => {
