@@ -240,3 +240,62 @@ fn main() -> Result<(), Error> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_json_dups() {
+        let test_json = r#"
+        {
+            "file_length" : 1318934,
+            "file_paths" : [
+                "/data/Photos/ny/00097.jpg",
+                "/data/Photos/concerts/00097.jpg"
+            ],
+            "full_hash" : 306482972711412640985380379178329462852,
+            "partial_hash" : 119482817874600850350240560092010233366
+        }"#;
+        let expected = vec!["/data/Photos/concerts/00097.jpg"];
+        let deserialized: Duplicates = serde_json::from_str(&test_json).unwrap();
+        let wi = WorkItem::new(deserialized, None, 1, false, None);
+        assert_eq!(wi.files_to_remove, expected);
+    }
+
+    #[test]
+    fn test_json_dups_keep() {
+        let test_json = r#"
+        {
+            "file_length" : 1318934,
+            "file_paths" : [
+                "/data/Photos/ny/00097.jpg",
+                "/data/Photos/concerts/00097.jpg"
+            ],
+            "full_hash" : 306482972711412640985380379178329462852,
+            "partial_hash" : 119482817874600850350240560092010233366
+        }"#;
+        let expected = vec!["/data/Photos/ny/00097.jpg"];
+        let deserialized: Duplicates = serde_json::from_str(&test_json).unwrap();
+        let wi = WorkItem::new(deserialized, None, 1, false, Some("concerts".to_owned()));
+        assert_eq!(wi.files_to_remove, expected);
+    }
+
+    #[test]
+    fn test_json_more_dups() {
+        let test_json = r#"
+        {
+            "file_length" : 1318934,
+            "file_paths" : [
+                "/data/Photos/ny/00097.jpg",
+                "/data/Photos/concerts/00097.jpg"
+            ],
+            "full_hash" : 306482972711412640985380379178329462852,
+            "partial_hash" : 119482817874600850350240560092010233366
+        }"#;
+        let expected: Vec<String> = Vec::new();
+        let deserialized: Duplicates = serde_json::from_str(&test_json).unwrap();
+        let wi = WorkItem::new(deserialized, None, 2, false, None);
+        assert_eq!(wi.files_to_remove, expected);
+    }
+}
