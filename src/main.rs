@@ -24,46 +24,97 @@ struct Duplicates {
     partial_hash: Option<u128>,
 }
 
-fn rem_file(
+fn rem_or_mov(
+    skip: usize,
+    paths: Vec<String>,
+    no: bool,
+    dest_path: Option<&str>,
+    keep_path: Option<&str>,
+) {
+    paths.iter().skip(skip).for_each(|x| {
+        trace!("Thread file: {}", x);
+        match keep_path {
+            Some(keep) => {
+                if x.contains(keep) {
+                    debug!("Keeping file {}", x);
+                } else {
+                    match dest_path {
+                        None => {
+                            print!("Deleting duplicate {}...", x);
+                            if !no {
+                                match fs::remove_file(x) {
+                                    Ok(_) => println!("Done"),
+                                    Err(e) => println!("Error ({})", e),
+                                }
+                            } else {
+                                println!("Done (not really)");
+                            }
+                        }
+                        Some(dest_path) => {
+                            print!("Moving duplicate {} to {}...", x, dest_path);
+                            if !no {
+                                let file_name = Path::new(x).file_name().unwrap();
+                                let mut dest = String::from(dest_path);
+                                dest.push('/');
+                                dest.push_str(file_name.to_str().unwrap());
+                                debug!("dest: {}", dest);
+                                let options = CopyOptions::new();
+                                match move_file(x, dest, &options) {
+                                    Ok(_) => println!("Done"),
+                                    Err(e) => println!("Error ({})", e),
+                                }
+                            } else {
+                                println!("Done (not really)");
+                            }
+                        }
+                    };
+                }
+            }
+            None => {
+                match dest_path {
+                    None => {
+                        print!("Deleting duplicate {}...", x);
+                        if !no {
+                            match fs::remove_file(x) {
+                                Ok(_) => println!("Done"),
+                                Err(e) => println!("Error ({})", e),
+                            }
+                        } else {
+                            println!("Done (not really)");
+                        }
+                    }
+                    Some(dest_path) => {
+                        print!("Moving duplicate {} to {}...", x, dest_path);
+                        if !no {
+                            let file_name = Path::new(x).file_name().unwrap();
+                            let mut dest = String::from(dest_path);
+                            dest.push('/');
+                            dest.push_str(file_name.to_str().unwrap());
+                            debug!("dest: {}", dest);
+                            let options = CopyOptions::new();
+                            match move_file(x, dest, &options) {
+                                Ok(_) => println!("Done"),
+                                Err(e) => println!("Error ({})", e),
+                            }
+                        } else {
+                            println!("Done (not really)");
+                        }
+                    }
+                };
+            }
+        };
+    });
+}
+
+fn handle_files(
     paths: Vec<String>,
     skip: usize,
     no: bool,
     matches: ArgMatches<'static>,
 ) -> thread::Result<()> {
-    let handler = thread::spawn(move || {
-        paths.iter().skip(skip).for_each(|x| {
-            trace!("Thread file: {}", x);
-            match matches.value_of("dest_path").or(None) {
-                None => {
-                    print!("Deleting duplicate {}...", x);
-                    if !no {
-                        match fs::remove_file(x) {
-                            Ok(_) => println!("Done"),
-                            Err(e) => println!("Error ({})", e),
-                        }
-                    } else {
-                        println!("Done (not really)");
-                    }
-                }
-                Some(dest_path) => {
-                    print!("Moving duplicate {} to {}...", x, dest_path);
-                    if !no {
-                        let file_name = Path::new(x).file_name().unwrap();
-                        let mut dest = String::from(dest_path);
-                        dest.push('/');
-                        dest.push_str(file_name.to_str().unwrap());
-                        debug!("dest: {}", dest);
-                        let options = CopyOptions::new();
-                        match move_file(x, dest, &options) {
-                            Ok(_) => println!("Done"),
-                            Err(e) => println!("Error ({})", e),
-                        }
-                    } else {
-                        println!("Done (not really)");
-                    }
-                }
-            };
-        });
+    let handler = thread::spawn(move || match matches.value_of("keep") {
+        Some(keep_path) => rem_or_mov(0, paths, no, matches.value_of("dest_path"), Some(keep_path)),
+        None => rem_or_mov(skip, paths, no, matches.value_of("dest_path"), None),
     });
     handler.join()
 }
@@ -71,7 +122,7 @@ fn rem_file(
 fn main() -> Result<(), Error> {
     env_logger::init();
     let matches = App::new("ddh-remover")
-        .version("0.1")
+        .version("0.2")
         .author("Pierguido L.")
         .long_about("It removes files found by the ddh utility.\nddh has to be used with the json output to be parsed by ddh-remover.\nThis can be saved in a file or read from stdin with a pipe a pipe")
         .arg(
@@ -100,6 +151,13 @@ fn main() -> Result<(), Error> {
                 .long("move")
                 .takes_value(true)
                 .help("Move the files to [dest_path] instead of deleting them"),
+        )
+        .arg(
+            Arg::with_name("keep")
+                .short("k")
+                .long("keep")
+                .takes_value(true)
+                .help("When deleting duplicates, keep the files that have \"keep\" in its full path.\nIf no files' path matches it, then it will keep the first one."),
         )
         .get_matches();
 
@@ -148,7 +206,7 @@ fn main() -> Result<(), Error> {
                 .unwrap();
             let cloned_paths = v.file_paths.clone();
             let no = matches.is_present("no");
-            rem_file(cloned_paths, skip, no, matches.clone()).unwrap();
+            handle_files(cloned_paths, skip, no, matches.clone()).unwrap();
         } else {
             trace!("This file has no duplicates");
             trace!("{:#?}", v);
