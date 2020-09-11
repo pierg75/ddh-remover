@@ -101,11 +101,11 @@ impl WorkItem {
         for file in &self.files_to_remove {
             println!("Removing file {}...", file);
             match self.dry_run {
-                true => match fs::remove_file(file) {
+                false => match fs::remove_file(file) {
                     Ok(_) => println!("Done"),
                     Err(e) => println!("Error ({})", e),
                 },
-                false => println!("Done (not really)"),
+                true => println!("Done (not really)"),
             }
         }
         Ok(())
