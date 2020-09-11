@@ -82,6 +82,11 @@ impl WorkItem {
     fn moveto(&self) -> Result<(), Error> {
         debug!("Moving files {:?}", self.files_to_remove);
         for file in &self.files_to_remove {
+            print!(
+                "Moving file {} to {}...",
+                file,
+                self.move_dest.clone().unwrap_or("".to_owned())
+            );
             let file_name = Path::new(file).file_name().unwrap();
             let mut dest = String::from(self.move_dest.clone().unwrap());
             dest.push('/');
@@ -99,7 +104,7 @@ impl WorkItem {
     fn delete(&self) -> Result<(), Error> {
         debug!("Deleting files {:?}", self.files_to_remove);
         for file in &self.files_to_remove {
-            println!("Removing file {}...", file);
+            print!("Removing file {}...", file);
             match self.dry_run {
                 false => match fs::remove_file(file) {
                     Ok(_) => println!("Done"),
