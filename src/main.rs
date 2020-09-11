@@ -2,7 +2,6 @@
 extern crate log;
 extern crate fs_extra;
 
-use clap::ArgMatches;
 use clap::{App, Arg};
 use fs_extra::file::{move_file, CopyOptions};
 use serde::{Deserialize, Serialize};
@@ -24,48 +23,101 @@ struct Duplicates {
     partial_hash: Option<u128>,
 }
 
-fn rem_file(
-    paths: Vec<String>,
-    skip: usize,
-    no: bool,
-    matches: ArgMatches<'static>,
-) -> thread::Result<()> {
-    let handler = thread::spawn(move || {
-        paths.iter().skip(skip).for_each(|x| {
-            trace!("Thread file: {}", x);
-            match matches.value_of("dest_path").or(None) {
-                None => {
-                    print!("Deleting duplicate {}...", x);
-                    if !no {
-                        match fs::remove_file(x) {
-                            Ok(_) => println!("Done"),
-                            Err(e) => println!("Error ({})", e),
-                        }
-                    } else {
-                        println!("Done (not really)");
+#[derive(Debug)]
+struct WorkItem {
+    duplicate: Duplicates,
+    move_dest: Option<String>,
+    skip_files: usize,
+    dry_run: bool,
+    files_to_remove: Vec<String>,
+}
+
+impl WorkItem {
+    fn new(
+        duplicate: Duplicates,
+        move_dest: Option<String>,
+        skip_files: usize,
+        dry_run: bool,
+        keep_path: Option<String>,
+    ) -> Self {
+        // Do work here to match which files to delete/move (this will end up in the
+        // "affected_files" vec
+        let mut tmp_files: Vec<String> = Vec::new();
+        // We are going to either skip X amount of files or have a "preferred" file to keep.
+        // However there could be the possibility that there are more files in the
+        // preferred path. In that case apply both (skip and select preferred).
+        // Note that skip it will either always be 1 or greater (1 being the default).
+        match keep_path {
+            Some(path) => {
+                trace!("Keep a preferred file");
+                for file in &duplicate.file_paths {
+                    if !file.contains(&path) {
+                        tmp_files.push(file.to_owned());
                     }
                 }
-                Some(dest_path) => {
-                    print!("Moving duplicate {} to {}...", x, dest_path);
-                    if !no {
-                        let file_name = Path::new(x).file_name().unwrap();
-                        let mut dest = String::from(dest_path);
-                        dest.push('/');
-                        dest.push_str(file_name.to_str().unwrap());
-                        debug!("dest: {}", dest);
-                        let options = CopyOptions::new();
-                        match move_file(x, dest, &options) {
-                            Ok(_) => println!("Done"),
-                            Err(e) => println!("Error ({})", e),
-                        }
-                    } else {
-                        println!("Done (not really)");
-                    }
+                if tmp_files.len() > skip_files {
+                    tmp_files.resize(skip_files, "".to_owned());
                 }
-            };
-        });
-    });
-    handler.join()
+                trace!("tmp_files after keeping: {:?}", tmp_files);
+            }
+            None => {
+                trace!("Keep only the first {} amount of files", skip_files);
+                duplicate
+                    .file_paths
+                    .iter()
+                    .skip(skip_files)
+                    .for_each(|x| tmp_files.push(x.clone()));
+                trace!("tmp_files after skipping: {:?}", tmp_files);
+            }
+        };
+        WorkItem {
+            duplicate,
+            move_dest,
+            skip_files,
+            dry_run,
+            files_to_remove: tmp_files,
+        }
+    }
+
+    fn moveto(&self) -> Result<(), Error> {
+        debug!("Moving files {:?}", self.files_to_remove);
+        for file in &self.files_to_remove {
+            let file_name = Path::new(file).file_name().unwrap();
+            let mut dest = String::from(self.move_dest.clone().unwrap());
+            dest.push('/');
+            dest.push_str(file_name.to_str().unwrap());
+            debug!("dest: {}", dest);
+            let options = CopyOptions::new();
+            match move_file(file, dest, &options) {
+                Ok(_) => println!("Done"),
+                Err(e) => println!("Error ({})", e),
+            }
+        }
+        Ok(())
+    }
+
+    fn delete(&self) -> Result<(), Error> {
+        debug!("Deleting files {:?}", self.files_to_remove);
+        for file in &self.files_to_remove {
+            println!("Removing file {}...", file);
+            match self.dry_run {
+                true => match fs::remove_file(file) {
+                    Ok(_) => println!("Done"),
+                    Err(e) => println!("Error ({})", e),
+                },
+                false => println!("Done (not really)"),
+            }
+        }
+        Ok(())
+    }
+
+    fn run(&self) -> Result<(), Error> {
+        debug!("Doing the proper work on files {:?}", self.files_to_remove);
+        match &self.move_dest {
+            Some(_) => self.moveto(),
+            None => self.delete(),
+        }
+    }
 }
 
 fn main() -> Result<(), Error> {
@@ -101,6 +153,13 @@ fn main() -> Result<(), Error> {
                 .takes_value(true)
                 .help("Move the files to [dest_path] instead of deleting them"),
         )
+        .arg(
+            Arg::with_name("keep")
+                .short("k")
+                .long("keep")
+                .takes_value(true)
+                .help("Keep the files matching the \"keep\" string"),
+        )
         .get_matches();
 
     let mut buffer = String::new();
@@ -115,6 +174,7 @@ fn main() -> Result<(), Error> {
         trace!("stdin {}", buffer);
     }
 
+    // Some sanity checks
     if matches.is_present("dest_path") {
         match Path::new(matches.value_of("dest_path").unwrap_or("")).exists() {
             true => {}
@@ -125,34 +185,53 @@ fn main() -> Result<(), Error> {
         }
     }
 
-    let mut de: Vec<Duplicates> = match serde_json::from_str(&buffer) {
+    let de: Vec<Duplicates> = match serde_json::from_str(&buffer) {
         Ok(de) => de,
         Err(e) => {
             println!("Error decoding the json file ({})", e);
             process::exit(2);
         }
     };
-    let iter_de = de.iter_mut();
-    trace!("iter_de: {:?}", iter_de);
-    for (i, v) in iter_de.enumerate() {
+
+    // Get the various cmdline options
+    let skip: usize = matches
+        .value_of("duplicates")
+        .unwrap_or("1")
+        .parse()
+        .unwrap();
+    let keep = match matches.value_of("keep") {
+        Some(keep) => Some(keep.to_owned()),
+        None => None,
+    };
+    let move_dest = match matches.value_of("dest_path") {
+        Some(dest) => Some(dest.to_owned()),
+        None => None,
+    };
+    let dry_run = matches.is_present("no");
+    // Go through all the json elements
+    trace!("de: {:?}", de);
+    for v in de.into_iter() {
         if v.file_paths.len() > 1 && (v.full_hash.is_some() || v.partial_hash.is_some()) {
-            debug!("Index {}", i);
             trace!("Element {:#?}", v);
             for entry in &v.file_paths {
                 debug!("{}", entry);
             }
-            let skip: usize = matches
-                .value_of("duplicates")
-                .unwrap_or("1")
-                .parse()
-                .unwrap();
-            let cloned_paths = v.file_paths.clone();
-            let no = matches.is_present("no");
-            rem_file(cloned_paths, skip, no, matches.clone()).unwrap();
+            let dest = move_dest.clone();
+            let keep = keep.clone();
+            let handler = thread::spawn(move || {
+                let instance = WorkItem::new(v, dest, skip, dry_run, keep);
+                trace!("instance: {:#?}", instance);
+                debug!("original files: {:#?}", instance.duplicate.file_paths);
+                debug!("files to remove: {:#?}", instance.files_to_remove);
+                instance.run().unwrap();
+            });
+            handler.join()
         } else {
             trace!("This file has no duplicates");
             trace!("{:#?}", v);
+            Ok(())
         }
+        .unwrap();
     }
     Ok(())
 }
