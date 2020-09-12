@@ -2,7 +2,7 @@
 extern crate log;
 extern crate fs_extra;
 
-use clap::{App, Arg};
+use clap::{App, Arg, ArgMatches};
 use fs_extra::file::{move_file, CopyOptions};
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -15,6 +15,35 @@ use std::thread;
 
 type Error = Box<dyn std::error::Error>;
 
+#[derive(Debug, Clone)]
+struct Args {
+    skip: usize,
+    move_dest: Option<String>,
+    dry_run: bool,
+    keep_path: Option<String>,
+}
+
+impl Args {
+    fn new(args: ArgMatches) -> Result<Args, Error> {
+        let skip: usize = args.value_of("duplicates").unwrap_or("1").parse().unwrap();
+        let keep_path = match args.value_of("keep") {
+            Some(keep) => Some(keep.to_owned()),
+            None => None,
+        };
+        let move_dest = match args.value_of("dest_path") {
+            Some(dest) => Some(dest.to_owned()),
+            None => None,
+        };
+        let dry_run = args.is_present("no");
+        Ok(Args {
+            skip,
+            move_dest,
+            dry_run,
+            keep_path,
+        })
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 struct Duplicates {
     file_length: u64,
@@ -26,20 +55,12 @@ struct Duplicates {
 #[derive(Debug)]
 struct WorkItem {
     duplicate: Duplicates,
-    move_dest: Option<String>,
-    skip_files: usize,
-    dry_run: bool,
+    args: Args,
     files_to_remove: Vec<String>,
 }
 
 impl WorkItem {
-    fn new(
-        duplicate: Duplicates,
-        move_dest: Option<String>,
-        skip_files: usize,
-        dry_run: bool,
-        keep_path: Option<String>,
-    ) -> Self {
+    fn new(duplicate: Duplicates, args: Args) -> Self {
         // Do work here to match which files to delete/move (this will end up in the
         // "affected_files" vec
         let mut tmp_files: Vec<String> = Vec::new();
@@ -47,7 +68,8 @@ impl WorkItem {
         // However there could be the possibility that there are more files in the
         // preferred path. In that case apply both (skip and select preferred).
         // Note that skip it will either always be 1 or greater (1 being the default).
-        match keep_path {
+        let args_tmp = args.clone();
+        match args.keep_path {
             Some(path) => {
                 trace!("Keep a preferred file");
                 for file in &duplicate.file_paths {
@@ -55,26 +77,24 @@ impl WorkItem {
                         tmp_files.push(file.to_owned());
                     }
                 }
-                if tmp_files.len() > skip_files {
-                    tmp_files.resize(skip_files, "".to_owned());
+                if tmp_files.len() > args.skip {
+                    tmp_files.resize(args.skip, "".to_owned());
                 }
                 trace!("tmp_files after keeping: {:?}", tmp_files);
             }
             None => {
-                trace!("Keep only the first {} amount of files", skip_files);
+                trace!("Keep only the first {} amount of files", args.skip);
                 duplicate
                     .file_paths
                     .iter()
-                    .skip(skip_files)
+                    .skip(args.skip)
                     .for_each(|x| tmp_files.push(x.clone()));
                 trace!("tmp_files after skipping: {:?}", tmp_files);
             }
         };
         WorkItem {
             duplicate,
-            move_dest,
-            skip_files,
-            dry_run,
+            args: args_tmp,
             files_to_remove: tmp_files,
         }
     }
@@ -85,10 +105,10 @@ impl WorkItem {
             print!(
                 "Moving file {} to {}...",
                 file,
-                self.move_dest.clone().unwrap_or("".to_owned())
+                self.args.move_dest.clone().unwrap_or("".to_owned())
             );
             let file_name = Path::new(file).file_name().unwrap();
-            let mut dest = String::from(self.move_dest.clone().unwrap());
+            let mut dest = String::from(self.args.move_dest.clone().unwrap());
             dest.push('/');
             dest.push_str(file_name.to_str().unwrap());
             debug!("dest: {}", dest);
@@ -105,7 +125,7 @@ impl WorkItem {
         debug!("Deleting files {:?}", self.files_to_remove);
         for file in &self.files_to_remove {
             print!("Removing file {}...", file);
-            match self.dry_run {
+            match self.args.dry_run {
                 false => match fs::remove_file(file) {
                     Ok(_) => println!("Done"),
                     Err(e) => println!("Error ({})", e),
@@ -118,7 +138,7 @@ impl WorkItem {
 
     fn run(&self) -> Result<(), Error> {
         debug!("Doing the proper work on files {:?}", self.files_to_remove);
-        match &self.move_dest {
+        match &self.args.move_dest {
             Some(_) => self.moveto(),
             None => self.delete(),
         }
@@ -199,20 +219,7 @@ fn main() -> Result<(), Error> {
     };
 
     // Get the various cmdline options
-    let skip: usize = matches
-        .value_of("duplicates")
-        .unwrap_or("1")
-        .parse()
-        .unwrap();
-    let keep = match matches.value_of("keep") {
-        Some(keep) => Some(keep.to_owned()),
-        None => None,
-    };
-    let move_dest = match matches.value_of("dest_path") {
-        Some(dest) => Some(dest.to_owned()),
-        None => None,
-    };
-    let dry_run = matches.is_present("no");
+    let args = Args::new(matches)?;
     // Go through all the json elements
     trace!("de: {:?}", de);
     for v in de.into_iter() {
@@ -221,10 +228,9 @@ fn main() -> Result<(), Error> {
             for entry in &v.file_paths {
                 debug!("{}", entry);
             }
-            let dest = move_dest.clone();
-            let keep = keep.clone();
+            let args = args.clone();
             let handler = thread::spawn(move || {
-                let instance = WorkItem::new(v, dest, skip, dry_run, keep);
+                let instance = WorkItem::new(v, args);
                 trace!("instance: {:#?}", instance);
                 debug!("original files: {:#?}", instance.duplicate.file_paths);
                 debug!("files to remove: {:#?}", instance.files_to_remove);
@@ -259,7 +265,13 @@ mod tests {
         }"#;
         let expected = vec!["/data/Photos/concerts/00097.jpg"];
         let deserialized: Duplicates = serde_json::from_str(&test_json).unwrap();
-        let wi = WorkItem::new(deserialized, None, 1, false, None);
+        let args = Args {
+            skip: 1,
+            move_dest: None,
+            dry_run: false,
+            keep_path: None,
+        };
+        let wi = WorkItem::new(deserialized, args);
         assert_eq!(wi.files_to_remove, expected);
     }
 
@@ -277,7 +289,13 @@ mod tests {
         }"#;
         let expected = vec!["/data/Photos/ny/00097.jpg"];
         let deserialized: Duplicates = serde_json::from_str(&test_json).unwrap();
-        let wi = WorkItem::new(deserialized, None, 1, false, Some("concerts".to_owned()));
+        let args = Args {
+            skip: 1,
+            move_dest: None,
+            dry_run: false,
+            keep_path: Some("concerts".to_owned()),
+        };
+        let wi = WorkItem::new(deserialized, args);
         assert_eq!(wi.files_to_remove, expected);
     }
 
@@ -295,7 +313,13 @@ mod tests {
         }"#;
         let expected: Vec<String> = Vec::new();
         let deserialized: Duplicates = serde_json::from_str(&test_json).unwrap();
-        let wi = WorkItem::new(deserialized, None, 2, false, None);
+        let args = Args {
+            skip: 2,
+            move_dest: None,
+            dry_run: false,
+            keep_path: None,
+        };
+        let wi = WorkItem::new(deserialized, args);
         assert_eq!(wi.files_to_remove, expected);
     }
 }
