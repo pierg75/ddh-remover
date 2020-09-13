@@ -5,13 +5,7 @@ extern crate fs_extra;
 use clap::{App, Arg, ArgMatches};
 use fs_extra::file::{move_file, CopyOptions};
 use serde::{Deserialize, Serialize};
-use std::fs;
-use std::fs::File;
-use std::io;
-use std::io::prelude::*;
-use std::path::Path;
-use std::process;
-use std::thread;
+use std::{fs, fs::File, io, io::prelude::*, path::Path, process, thread};
 
 type Error = Box<dyn std::error::Error>;
 
