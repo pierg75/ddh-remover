@@ -64,7 +64,7 @@ fn main() -> Result<(), Error> {
         match Path::new(matches.value_of("dest_path").unwrap_or("")).exists() {
             true => {}
             false => {
-                println!("The destination path does not exists");
+                eprintln!("The destination path does not exists");
                 process::exit(3);
             }
         }
@@ -73,7 +73,7 @@ fn main() -> Result<(), Error> {
     let de: Vec<Duplicates> = match serde_json::from_str(&buffer) {
         Ok(de) => de,
         Err(e) => {
-            println!("Error decoding the json file ({})", e);
+            eprintln!("Error decoding the json file ({})", e);
             process::exit(2);
         }
     };
