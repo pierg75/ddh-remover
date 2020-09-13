@@ -316,4 +316,15 @@ mod tests {
         let wi = WorkItem::new(deserialized, args);
         assert_eq!(wi.files_to_remove, expected);
     }
+
+    #[test]
+    fn test_wrong_json() {
+        let test_json = r#"
+        {
+            "field1" : "test",
+            "field2" : "/data/Photos/ny/00097.jpg",
+            "field3" : 3,
+        }"#;
+        assert!(serde_json::from_str::<String>(&test_json).is_err());
+    }
 }
