@@ -19,21 +19,11 @@ pub struct Args {
 
 impl Args {
     pub fn new(args: ArgMatches) -> Result<Args, Error> {
-        let skip: usize = args.value_of("duplicates").unwrap_or("1").parse().unwrap();
-        let keep_path = match args.value_of("keep") {
-            Some(keep) => Some(keep.to_owned()),
-            None => None,
-        };
-        let move_dest = match args.value_of("dest_path") {
-            Some(dest) => Some(dest.to_owned()),
-            None => None,
-        };
-        let dry_run = args.is_present("no");
         Ok(Args {
-            skip,
-            move_dest,
-            dry_run,
-            keep_path,
+            skip: args.value_of("duplicates").unwrap_or("1").parse().unwrap(),
+            move_dest: args.value_of("dest_path").map(|x| x.to_owned()),
+            dry_run: args.is_present("no"),
+            keep_path: args.value_of("keep").map(|x| x.to_owned()),
         })
     }
 }
