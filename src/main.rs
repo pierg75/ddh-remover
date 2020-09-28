@@ -79,7 +79,7 @@ fn main() -> Result<(), Error> {
     };
 
     // Get the various cmdline options
-    let args = Args::new(matches)?;
+    let args = Args::new(matches);
     // Go through all the json elements
     trace!("de: {:?}", de);
     for v in de.into_iter() {
@@ -89,20 +89,18 @@ fn main() -> Result<(), Error> {
                 debug!("{}", entry);
             }
             let args = args.clone();
-            let handler = thread::spawn(move || {
+            let handler: thread::JoinHandle<_> = thread::spawn(move || {
                 let instance = WorkItem::new(v, args);
                 trace!("instance: {:#?}", instance);
                 debug!("original files: {:#?}", instance.dups().files());
                 debug!("files to remove: {:#?}", instance.files_remove());
-                instance.run().unwrap();
+                instance.run()
             });
-            handler.join()
+            handler.join().unwrap()?;
         } else {
             trace!("This file has no duplicates");
             trace!("{:#?}", v);
-            Ok(())
         }
-        .unwrap();
     }
     Ok(())
 }

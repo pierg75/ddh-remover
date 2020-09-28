@@ -5,9 +5,46 @@ extern crate fs_extra;
 use clap::ArgMatches;
 use fs_extra::file::{move_file, CopyOptions};
 use serde::{Deserialize, Serialize};
-use std::{fs, path::Path};
+use std::{error::Error, fmt, fs, path::Path};
 
-type Error = Box<dyn std::error::Error>;
+#[derive(Debug)]
+pub enum HDDError {
+    MoveDest(String),
+    FileName(String),
+    Io(std::io::Error),
+    FSExtra(fs_extra::error::Error),
+}
+
+impl fmt::Display for HDDError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            HDDError::MoveDest(inner) => {
+                write!(f, "An error while moving file occurred ({:?})", inner)
+            }
+            HDDError::FileName(inner) => write!(
+                f,
+                "An error while getting the file name occurred ({:?})",
+                inner
+            ),
+            HDDError::Io(inner) => inner.fmt(f),
+            HDDError::FSExtra(inner) => inner.fmt(f),
+        }
+    }
+}
+
+impl Error for HDDError {}
+
+impl From<std::io::Error> for HDDError {
+    fn from(err: std::io::Error) -> HDDError {
+        HDDError::Io(err)
+    }
+}
+
+impl From<fs_extra::error::Error> for HDDError {
+    fn from(err: fs_extra::error::Error) -> HDDError {
+        HDDError::FSExtra(err)
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct Args {
@@ -18,13 +55,13 @@ pub struct Args {
 }
 
 impl Args {
-    pub fn new(args: ArgMatches) -> Result<Args, Error> {
-        Ok(Args {
+    pub fn new(args: ArgMatches) -> Args {
+        Args {
             skip: args.value_of("duplicates").unwrap_or("1").parse().unwrap(),
             move_dest: args.value_of("dest_path").map(|x| x.to_owned()),
             dry_run: args.is_present("no"),
             keep_path: args.value_of("keep").map(|x| x.to_owned()),
-        })
+        }
     }
 }
 
@@ -95,29 +132,32 @@ impl WorkItem {
         }
     }
 
-    pub fn moveto(&self) -> Result<(), Error> {
+    pub fn moveto(&self) -> Result<(), HDDError> {
         debug!("Moving files {:?}", self.files_to_remove);
         for file in &self.files_to_remove {
             print!(
                 "Moving file {} to {}...",
                 file,
-                self.args.move_dest.clone().unwrap_or("".to_owned())
+                self.args.move_dest.clone().unwrap_or_else(|| "".to_owned())
             );
             let file_name = Path::new(file).file_name().unwrap();
-            let mut dest = String::from(self.args.move_dest.clone().unwrap());
+            let mut dest = self.args.move_dest.clone().unwrap_or_else(|| "".to_owned());
             dest.push('/');
             dest.push_str(file_name.to_str().unwrap());
             debug!("dest: {}", dest);
             let options = CopyOptions::new();
             match move_file(file, dest, &options) {
                 Ok(_) => println!("Done"),
-                Err(e) => println!("Error ({})", e),
+                Err(e) => {
+                    println!("Error ({})", e.to_string());
+                    return Err(HDDError::FSExtra(e));
+                }
             }
         }
         Ok(())
     }
 
-    pub fn delete(&self) -> Result<(), Error> {
+    pub fn delete(&self) -> Result<(), HDDError> {
         debug!("Deleting files {:?}", self.files_to_remove);
         for file in &self.files_to_remove {
             print!("Removing file {}...", file);
@@ -132,7 +172,7 @@ impl WorkItem {
         Ok(())
     }
 
-    pub fn run(&self) -> Result<(), Error> {
+    pub fn run(&self) -> Result<(), HDDError> {
         debug!("Doing the proper work on files {:?}", self.files_to_remove);
         match &self.args.move_dest {
             Some(_) => self.moveto(),
