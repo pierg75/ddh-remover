@@ -90,7 +90,7 @@ fn main() -> Result<(), Error> {
             }
             let args = args.clone();
             let handler: thread::JoinHandle<_> = thread::spawn(move || {
-                let instance = WorkItem::new(v, args);
+                let instance = WorkItem::new(&v, args);
                 trace!("instance: {:#?}", instance);
                 debug!("original files: {:#?}", instance.dups().files());
                 debug!("files to remove: {:#?}", instance.files_remove());

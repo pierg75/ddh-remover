@@ -86,17 +86,17 @@ impl Duplicates {
 }
 
 #[derive(Debug)]
-pub struct WorkItem {
-    duplicate: Duplicates,
+pub struct WorkItem<'a> {
+    duplicate: &'a Duplicates,
     args: Args,
-    files_to_remove: Vec<String>,
+    files_to_remove: Vec<&'a String>,
 }
 
-impl WorkItem {
-    pub fn new(duplicate: Duplicates, args: Args) -> Self {
+impl<'a> WorkItem<'a> {
+    pub fn new(duplicate: &'a Duplicates, args: Args) -> Self {
         // Do work here to match which files to delete/move (this will end up in the
         // "affected_files" vec
-        let mut tmp_files: Vec<String> = Vec::new();
+        let mut tmp_files: Vec<&'a String> = Vec::new();
         // We are going to either skip X amount of files or have a "preferred" file to keep.
         // However there could be the possibility that there are more files in the
         // preferred path. In that case apply both (skip and select preferred).
@@ -105,14 +105,12 @@ impl WorkItem {
         match args.keep_path {
             Some(path) => {
                 trace!("Keep a preferred file");
-                for file in &duplicate.file_paths {
-                    if !file.contains(&path) {
-                        tmp_files.push(file.to_owned());
+                let skip = args.skip;
+                duplicate.file_paths.iter().for_each(|file| {
+                    if !file.contains(&path) && tmp_files.len() < skip {
+                        tmp_files.push(file);
                     }
-                }
-                if tmp_files.len() > args.skip {
-                    tmp_files.resize(args.skip, "".to_owned());
-                }
+                });
                 trace!("tmp_files after keeping: {:?}", tmp_files);
             }
             None => {
@@ -121,7 +119,7 @@ impl WorkItem {
                     .file_paths
                     .iter()
                     .skip(args.skip)
-                    .for_each(|x| tmp_files.push(x.clone()));
+                    .for_each(|x| tmp_files.push(x));
                 trace!("tmp_files after skipping: {:?}", tmp_files);
             }
         };
@@ -180,7 +178,7 @@ impl WorkItem {
         }
     }
 
-    pub fn files_remove(&self) -> &Vec<String> {
+    pub fn files_remove(&self) -> &Vec<&'a String> {
         &self.files_to_remove
     }
     pub fn dups(&self) -> &Duplicates {
@@ -212,7 +210,7 @@ mod tests {
             dry_run: false,
             keep_path: None,
         };
-        let wi = WorkItem::new(deserialized, args);
+        let wi = WorkItem::new(&deserialized, args);
         assert_eq!(*wi.files_remove(), expected);
     }
 
