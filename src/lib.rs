@@ -93,7 +93,7 @@ pub struct WorkItem<'a> {
 }
 
 impl<'a> WorkItem<'a> {
-    pub fn new(duplicate: &'a Duplicates, args: Args) -> Self {
+    pub fn new(duplicate: &'a mut Duplicates, args: Args) -> Self {
         // Do work here to match which files to delete/move (this will end up in the
         // "affected_files" vec
         let mut tmp_files: Vec<&'a String> = Vec::new();
@@ -105,16 +105,22 @@ impl<'a> WorkItem<'a> {
         match args.keep_path {
             Some(path) => {
                 trace!("Keep a preferred file");
-                let skip = args.skip;
-                duplicate.file_paths.iter().for_each(|file| {
-                    if !file.contains(&path) && tmp_files.len() < skip {
-                        tmp_files.push(file);
-                    }
-                });
+                //let skip = args.skip;
+                //duplicate.file_paths.iter().for_each(|file| {
+                //    if !file.contains(&path) && tmp_files.len() < skip {
+                //        tmp_files.push(file);
+                //    }
+                //});
+                tmp_files = duplicate
+                    .file_paths
+                    .iter()
+                    .filter(|f| !f.contains(&path))
+                    .collect::<Vec<&String>>();
                 trace!("tmp_files after keeping: {:?}", tmp_files);
             }
             None => {
                 trace!("Keep only the first {} amount of files", args.skip);
+                duplicate.file_paths.sort();
                 duplicate
                     .file_paths
                     .iter()
@@ -132,26 +138,23 @@ impl<'a> WorkItem<'a> {
 
     pub fn moveto(&self) -> Result<(), HDDError> {
         debug!("Moving files {:?}", self.files_to_remove);
-        for file in &self.files_to_remove {
+        self.files_to_remove.iter().for_each(|file| {
             print!(
                 "Moving file {} to {}...",
                 file,
-                self.args.move_dest.clone().unwrap_or_else(|| "".to_owned())
+                self.args.move_dest.as_ref().unwrap_or(&String::from(""))
             );
-            let file_name = Path::new(file).file_name().unwrap();
+            let file_name = Path::new(file).file_name().ok_or("");
             let mut dest = self.args.move_dest.clone().unwrap_or_else(|| "".to_owned());
             dest.push('/');
-            dest.push_str(file_name.to_str().unwrap());
+            dest.push_str(file_name.unwrap().to_str().unwrap());
             debug!("dest: {}", dest);
             let options = CopyOptions::new();
             match move_file(file, dest, &options) {
                 Ok(_) => println!("Done"),
-                Err(e) => {
-                    println!("Error ({})", e.to_string());
-                    return Err(HDDError::FSExtra(e));
-                }
+                Err(e) => println!("Error ({})", e.to_string()),
             }
-        }
+        });
         Ok(())
     }
 
@@ -234,7 +237,7 @@ mod tests {
             dry_run: false,
             keep_path: Some("concerts".to_owned()),
         };
-        let wi = WorkItem::new(deserialized, args);
+        let wi = WorkItem::new(&mut deserialized, args);
         assert_eq!(*wi.files_remove(), expected);
     }
 
@@ -250,7 +253,7 @@ mod tests {
             "full_hash" : 306482972711412640985380379178329462852,
             "partial_hash" : 119482817874600850350240560092010233366
         }"#;
-        let expected: Vec<String> = Vec::new();
+        let expected: Vec<&String> = Vec::new();
         let deserialized: Duplicates = serde_json::from_str(&test_json).unwrap();
         let args = Args {
             skip: 2,
@@ -258,7 +261,7 @@ mod tests {
             dry_run: false,
             keep_path: None,
         };
-        let wi = WorkItem::new(deserialized, args);
+        let wi = WorkItem::new(&deserialized, args);
         assert_eq!(*wi.files_remove(), expected);
     }
 

@@ -82,7 +82,7 @@ fn main() -> Result<(), Error> {
     let args = Args::new(matches);
     // Go through all the json elements
     trace!("de: {:?}", de);
-    for v in de.into_iter() {
+    for mut v in de.into_iter() {
         if v.files().len() > 1 && (v.full_hashes().is_some() || v.partial_hashes().is_some()) {
             trace!("Element {:#?}", v);
             for entry in &v.files() {
@@ -90,7 +90,7 @@ fn main() -> Result<(), Error> {
             }
             let args = args.clone();
             let handler: thread::JoinHandle<_> = thread::spawn(move || {
-                let instance = WorkItem::new(&v, args);
+                let instance = WorkItem::new(&mut v, args);
                 trace!("instance: {:#?}", instance);
                 debug!("original files: {:#?}", instance.dups().files());
                 debug!("files to remove: {:#?}", instance.files_remove());
