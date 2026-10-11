@@ -55,13 +55,16 @@ pub struct Args {
 }
 
 impl Args {
-    pub fn new(args: ArgMatches) -> Args {
-        Args {
-            skip: args.value_of("duplicates").unwrap_or("1").parse().unwrap(),
+    pub fn new(args: ArgMatches) -> Result<Args, HDDError> {
+        let skip = args.value_of("duplicates").unwrap_or("1")
+            .parse::<usize>()
+            .map_err(|_| HDDError::Io(std::io::Error::new(std::io::ErrorKind::InvalidInput, "Invalid value for --duplicates: must be a positive integer")))?;
+        Ok(Args {
+            skip,
             move_dest: args.value_of("dest_path").map(|x| x.to_owned()),
             dry_run: args.is_present("no"),
             keep_path: args.value_of("keep").map(|x| x.to_owned()),
-        }
+        })
     }
 }
 

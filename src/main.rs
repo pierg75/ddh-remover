@@ -79,7 +79,7 @@ fn main() -> Result<(), Error> {
     };
 
     // Get the various cmdline options
-    let args = Args::new(matches);
+    let args = Args::new(matches)?;
     // Go through all the json elements
     trace!("de: {:?}", de);
     for mut v in de.into_iter() {
