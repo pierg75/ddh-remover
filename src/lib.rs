@@ -5,7 +5,7 @@ extern crate fs_extra;
 use clap::ArgMatches;
 use fs_extra::file::{move_file, CopyOptions};
 use serde::{Deserialize, Serialize};
-use std::{error::Error, fmt, fs, path::Path};
+use std::{error::Error, fmt, fs, path::{Path, PathBuf}};
 
 #[derive(Debug)]
 pub enum HDDError {
@@ -139,23 +139,20 @@ impl<'a> WorkItem<'a> {
 
     pub fn moveto(&self) -> Result<(), HDDError> {
         debug!("Moving files {:?}", self.files_to_remove);
-        self.files_to_remove.iter().for_each(|file| {
-            print!(
-                "Moving file {} to {}...",
-                file,
-                self.args.move_dest.as_ref().unwrap_or(&String::from(""))
-            );
-            let file_name = Path::new(file).file_name().ok_or("");
-            let mut dest = self.args.move_dest.clone().unwrap_or_else(|| "".to_owned());
-            dest.push('/');
-            dest.push_str(file_name.unwrap().to_str().unwrap());
-            debug!("dest: {}", dest);
+        let dest_dir = self.args.move_dest.as_ref().ok_or_else(|| {
+            HDDError::MoveDest("Destination path not set".to_string())
+        })?;
+        for file in &self.files_to_remove {
+            let src = Path::new(file);
+            let file_name = src.file_name().ok_or_else(|| {
+                HDDError::FileName(format!("Invalid file path (no filename): {}", file))
+            })?;
+            let dest = PathBuf::from(dest_dir).join(file_name);
+            print!("Moving file {} to {}...", file, dest.display());
             let options = CopyOptions::new();
-            match move_file(file, dest, &options) {
-                Ok(_) => println!("Done"),
-                Err(e) => println!("Error ({})", e.to_string()),
-            }
-        });
+            move_file(file, &dest, &options).map_err(|e| HDDError::FSExtra(e))?;
+            println!("Done");
+        }
         Ok(())
     }
 
@@ -163,12 +160,11 @@ impl<'a> WorkItem<'a> {
         debug!("Deleting files {:?}", self.files_to_remove);
         for file in &self.files_to_remove {
             print!("Removing file {}...", file);
-            match self.args.dry_run {
-                false => match fs::remove_file(file) {
-                    Ok(_) => println!("Done"),
-                    Err(e) => println!("Error ({})", e),
-                },
-                true => println!("Done (not really)"),
+            if self.args.dry_run {
+                println!("Done (not really)");
+            } else {
+                fs::remove_file(file).map_err(|e| HDDError::Io(e))?;
+                println!("Done");
             }
         }
         Ok(())
