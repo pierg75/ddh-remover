@@ -89,14 +89,14 @@ impl Duplicates {
 pub struct WorkItem<'a> {
     duplicate: &'a Duplicates,
     args: Args,
-    files_to_remove: Vec<&'a String>,
+    files_to_remove: Vec<String>,
 }
 
 impl<'a> WorkItem<'a> {
-    pub fn new(duplicate: &'a mut Duplicates, args: Args) -> Self {
+    pub fn new(duplicate: &'a Duplicates, args: Args) -> Self {
         // Do work here to match which files to delete/move (this will end up in the
         // "affected_files" vec
-        let mut tmp_files: Vec<&'a String> = Vec::new();
+        let mut tmp_files: Vec<String> = Vec::new();
         // We are going to either skip X amount of files or have a "preferred" file to keep.
         // However there could be the possibility that there are more files in the
         // preferred path. In that case apply both (skip and select preferred).
@@ -115,17 +115,18 @@ impl<'a> WorkItem<'a> {
                     .file_paths
                     .iter()
                     .filter(|f| !f.contains(&path))
-                    .collect::<Vec<&String>>();
+                    .cloned()
+                    .collect::<Vec<String>>();
                 trace!("tmp_files after keeping: {:?}", tmp_files);
             }
             None => {
                 trace!("Keep only the first {} amount of files", args.skip);
-                duplicate.file_paths.sort();
-                duplicate
-                    .file_paths
+                let mut sorted_paths = duplicate.file_paths.clone();
+                sorted_paths.sort();
+                sorted_paths
                     .iter()
                     .skip(args.skip)
-                    .for_each(|x| tmp_files.push(x));
+                    .for_each(|x| tmp_files.push(x.to_string()));
                 trace!("tmp_files after skipping: {:?}", tmp_files);
             }
         };
@@ -181,7 +182,7 @@ impl<'a> WorkItem<'a> {
         }
     }
 
-    pub fn files_remove(&self) -> &Vec<&'a String> {
+    pub fn files_remove(&self) -> &Vec<String> {
         &self.files_to_remove
     }
     pub fn dups(&self) -> &Duplicates {
@@ -205,7 +206,7 @@ mod tests {
             "full_hash" : 306482972711412640985380379178329462852,
             "partial_hash" : 119482817874600850350240560092010233366
         }"#;
-        let expected = vec!["/data/Photos/concerts/00097.jpg"];
+        let expected = vec!["/data/Photos/ny/00097.jpg"];
         let deserialized: Duplicates = serde_json::from_str(&test_json).unwrap();
         let args = Args {
             skip: 1,
@@ -237,7 +238,7 @@ mod tests {
             dry_run: false,
             keep_path: Some("concerts".to_owned()),
         };
-        let wi = WorkItem::new(&mut deserialized, args);
+        let wi = WorkItem::new(&deserialized, args);
         assert_eq!(*wi.files_remove(), expected);
     }
 
@@ -253,7 +254,7 @@ mod tests {
             "full_hash" : 306482972711412640985380379178329462852,
             "partial_hash" : 119482817874600850350240560092010233366
         }"#;
-        let expected: Vec<&String> = Vec::new();
+        let expected: Vec<&str> = vec![];
         let deserialized: Duplicates = serde_json::from_str(&test_json).unwrap();
         let args = Args {
             skip: 2,
