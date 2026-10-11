@@ -106,20 +106,27 @@ impl<'a> WorkItem<'a> {
         // Note that skip it will either always be 1 or greater (1 being the default).
         let args_tmp = args.clone();
         match args.keep_path {
-            Some(path) => {
+            Some(keep) => {
                 trace!("Keep a preferred file");
-                //let skip = args.skip;
-                //duplicate.file_paths.iter().for_each(|file| {
-                //    if !file.contains(&path) && tmp_files.len() < skip {
-                //        tmp_files.push(file);
-                //    }
-                //});
-                tmp_files = duplicate
-                    .file_paths
-                    .iter()
-                    .filter(|f| !f.contains(&path))
-                    .cloned()
-                    .collect::<Vec<String>>();
+                // Partition into preferred (matching keep_path component) and non-preferred
+                let mut preferred: Vec<String> = Vec::new();
+                let mut non_preferred: Vec<String> = Vec::new();
+                for f in &duplicate.file_paths {
+                    let is_preferred = Path::new(f).components().any(|c| c.as_os_str() == std::ffi::OsStr::new(&keep));
+                    if is_preferred {
+                        preferred.push(f.clone());
+                    } else {
+                        non_preferred.push(f.clone());
+                    }
+                }
+                // Non-preferred: always remove
+                tmp_files.extend(non_preferred);
+                // Preferred: sort, skip N, remove the rest
+                if preferred.len() > args.skip {
+                    preferred.sort();
+                    preferred.drain(0..args.skip);
+                    tmp_files.extend(preferred);
+                }
                 trace!("tmp_files after keeping: {:?}", tmp_files);
             }
             None => {
