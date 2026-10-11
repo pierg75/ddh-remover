@@ -83,7 +83,7 @@ fn main() -> Result<(), Error> {
     // Go through all the json elements
     trace!("de: {:?}", de);
     for mut v in de.into_iter() {
-        if v.files().len() > 1 && (v.full_hashes().is_some() || v.partial_hashes().is_some()) {
+        if v.len() > 1 && (v.full_hashes().is_some() || v.partial_hashes().is_some()) {
             trace!("Element {:#?}", v);
             for entry in &v.files() {
                 debug!("{}", entry);

@@ -80,6 +80,9 @@ impl Duplicates {
     pub fn files(&self) -> Vec<String> {
         self.file_paths.clone()
     }
+    pub fn len(&self) -> usize {
+        self.file_paths.len()
+    }
     pub fn full_hashes(&self) -> Option<u128> {
         self.full_hash
     }
